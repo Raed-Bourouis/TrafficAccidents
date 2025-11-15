@@ -208,3 +208,8 @@ __marimo__/
 
 *gz*
 setup.md
+
+*.ipynb
+
+*.env
+*.csv
