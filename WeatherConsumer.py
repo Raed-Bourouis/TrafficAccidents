@@ -33,13 +33,12 @@ consumer = KafkaConsumer(
 
 
 local_file = "weather_buffer.csv"
-buffer = []
 
 def WeatherConsumer(BATCH_SIZE: int = 10):
-
+    buffer = []
     for message in consumer:
         data = message.value
-
+        print(data)
         # Append to buffer
         buffer.append({
             "timestamp": data.get("timestamp"),
@@ -57,8 +56,10 @@ def WeatherConsumer(BATCH_SIZE: int = 10):
             df.to_csv(local_file, index=False)
 
             # Generate unique HDFS file name
-            hdfs_file = os.path.join(HDFS_DIR, f"weather_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")
-
+            hdfs_file = os.path.join(HDFS_DIR, f"weather/weather_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")
+            print(HDFS_DIR,'\n')
+            print(hdfs_file,'\n')
+            
             # Write CSV to HDFS
             client.upload(hdfs_file, local_file, overwrite=True)
             print(f"[INFO] Uploaded {len(buffer)} records to HDFS: {hdfs_file}")
@@ -66,3 +67,4 @@ def WeatherConsumer(BATCH_SIZE: int = 10):
             # Clear buffer
             buffer = []
 
+WeatherConsumer()

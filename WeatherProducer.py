@@ -28,7 +28,7 @@ WeatherProducer = KafkaProducer(
 
 WEATHER_API=os.getenv("WEATHER_API")
 
-def WeatherProducer(LAT: float, LON: float, frequency:int=60 ):
+def Produce(LAT: float=51.3, LON: float=-0.5, frequency:int=60 ):
     try:
         # Build the Open-Meteo API URL
         fields_str = ",".join(HOURLY_FIELDS)
@@ -60,3 +60,7 @@ def WeatherProducer(LAT: float, LON: float, frequency:int=60 ):
     except Exception as e:
         print("[ERROR]", e)
         time.sleep(10)
+        
+        
+while True:
+    Produce()
