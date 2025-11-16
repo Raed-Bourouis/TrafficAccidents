@@ -15,6 +15,9 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
+DEDUP_FILE = "sent_ids.txt"
+
+
 # ------------------------------------------------------
 #                SETTINGS
 # ------------------------------------------------------
@@ -33,6 +36,11 @@ class TomTomKafkaProducer:
         self.total_sent = 0
         self.total_errors = 0
         self.start_time = time.time()
+        
+        if os.path.exists(DEDUP_FILE):
+            with open(DEDUP_FILE) as f:
+                self.sent_ids = set(line.strip() for line in f)
+
 
         self.producer = KafkaProducer(
             bootstrap_servers=[bootstrap],
@@ -48,6 +56,9 @@ class TomTomKafkaProducer:
     # ------------------------------------------------------
     def on_success(self, record_metadata, accident_id):
         self.sent_ids.add(accident_id)
+        with open(DEDUP_FILE, "a") as f:
+            f.write(str(accident_id) + "\n")
+
         self.total_sent += 1
         logging.info(
             f"✓ Sent (partition={record_metadata.partition}, offset={record_metadata.offset})"
@@ -68,16 +79,17 @@ class TomTomKafkaProducer:
             logging.warning("Skipping incident without ID")
             return
 
-        # ✔ Deduplication
+        # Dedup
         if accident_id in self.sent_ids:
-            logging.info(f"Duplicate skipped: {accident_id}")
+            logging.debug(f"Duplicate skipped: {accident_id}")
             return
 
-        # Minimal message
+        events = props.get("events", [])
+
         msg = {
             "id": accident_id,
             "iconCategory": props.get("iconCategory"),
-            "description": props.get("events")[0].get("description"),
+            "description": [e.get("description") for e in events],
             "startTime": props.get("startTime"),
             "endTime": props.get("endTime"),
             "from": props.get("from"),
@@ -86,12 +98,16 @@ class TomTomKafkaProducer:
             "delay": props.get("delay"),
             "magnitudeOfDelay": props.get("magnitudeOfDelay"),
             "roadNumbers": props.get("roadNumbers"),
+            "bbox_city": props.get("city", None)
         }
 
-        # ✔ Use accident_id as Kafka key → consistent partitioning
-        future = self.producer.send(TOPIC, key=str(accident_id), value=msg)
-        future.add_callback(self.on_success, accident_id=accident_id)
-        future.add_errback(self.on_error)
+        fut = self.producer.send(
+            TOPIC,
+            key=str(accident_id),
+            value=msg
+        )
+        fut.add_callback(self.on_success, accident_id=accident_id)
+        fut.add_errback(self.on_error)
 
     # ------------------------------------------------------
     #          TOMTOM FETCH
@@ -129,13 +145,28 @@ class TomTomKafkaProducer:
 
         while True:
             cities = {
-                "Paris": (2.224, 48.815, 2.470, 48.902),
-                "Lyon": (4.78, 45.70, 4.90, 45.80),
-                "Marseille": (5.32, 43.24, 5.47, 43.35),
+                "Paris": (2.20, 48.80, 2.48, 48.91),
+                "Marseille": (5.30, 43.23, 5.47, 43.38),
+                "Lyon": (4.77, 45.70, 4.95, 45.83),
+                "Toulouse": (1.35, 43.50, 1.53, 43.67),
+                "Nice": (7.20, 43.66, 7.31, 43.74),
+                "Nantes": (-1.63, 47.17, -1.51, 47.27),
+                "Strasbourg": (7.67, 48.53, 7.80, 48.63),
+                "Montpellier": (3.80, 43.56, 3.94, 43.66),
+                "Bordeaux": (-0.61, 44.78, -0.53, 44.88),
+                "Lille": (3.01, 50.59, 3.14, 50.67),
+                "Rennes": (-1.73, 48.06, -1.63, 48.16),
+                "Reims": (4.00, 49.20, 4.10, 49.30),
+                "Saint-Étienne": (4.33, 45.40, 4.42, 45.49),
+                "Toulon": (5.88, 43.10, 5.96, 43.17),
+                "Grenoble": (5.67, 45.13, 5.76, 45.22),
             }
+
             for city, citybbox in cities.items():
                 try:
-                    incidents = self.fetch_from_tomtom(citybbox[0],citybbox[1],citybbox[2],citybbox[3])
+                    incidents = self.fetch_from_tomtom(
+                        citybbox[0], citybbox[1], citybbox[2], citybbox[3]
+                    )
 
                     # Write the raw incidents list to a JSON file for debugging/archival.
                     try:

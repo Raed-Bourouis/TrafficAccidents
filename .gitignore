@@ -213,3 +213,6 @@ setup.md
 
 *.env
 *.csv
+*.txt
+demo.py
+
